@@ -1,0 +1,142 @@
+#!/bin/bash                                               
+##############################################################################
+## cfg_archive_procspool                                                   
+## Written by: Matt Pascoe <matt@opennetadmin.com>                            
+##                                                                            
+## License:                                                                   
+##  cfg_archive_procspool (hereafter referred to as "program") is free software;
+##  you can redistribute it and/or modify it under the terms of the GNU General    
+##  Public License as published by the Free Software Foundation; either version    
+##  2 of the License, or (at your option) any later version.                       
+##  Note that when redistributing modified versions of this source code, you       
+##  must ensure that this disclaimer and the above coder's names are included      
+##  VERBATIM in the modified code.                                                 
+##                                                                                 
+## Disclaimer:                                                                     
+##  This program is provided with no warranty of any kind, either expressed or     
+##  implied.  It is the responsibility of the user (you) to fully research and     
+##  comprehend the usage of this program.  As with any tool, it can be misused,    
+##  either intentionally (you're a vandal) or unintentionally (you're a moron).    
+##  THE AUTHOR(S) IS(ARE) NOT RESPONSIBLE FOR ANYTHING YOU DO WITH THIS PROGRAM    
+##  or anything that happens because of your use (or misuse) of this program,      
+##  including but not limited to anything you, your lawyers, or anyone else        
+##  can dream up.  And now, a relevant quote directly from the GPL:                
+##                                                                                 
+## NO WARRANTY                                                                     
+##                                                                                 
+##  11. BECAUSE THE PROGRAM IS LICENSED FREE OF CHARGE, THERE IS NO WARRANTY       
+##  FOR THE PROGRAM, TO THE EXTENT PERMITTED BY APPLICABLE LAW.  EXCEPT WHEN       
+##  OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES         
+##  PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED     
+##  OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF           
+##  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.  THE ENTIRE RISK AS      
+##  TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU.  SHOULD THE         
+##  PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING,       
+##  REPAIR OR CORRECTION.                                                          
+##                                                                                 
+## The GNU GPL can be found at http://www.fsf.org/copyleft/gpl.html                
+##                                                                                 
+##############################################################################     
+##                                                                                 
+## Description                                                                     
+## Subversion info: $Id$                                                           
+##                                                                                 
+## This script is intended to be called by cron, probably once a minute.  It will
+## process the cfg_archive spool directory and cleanup any old files.
+##                                                                                 
+## You should choose the USE_SPOOL option to make the trapscript update the spool dir.
+## This simply "touches" a file in the specified SPOOL_DIR.  
+##
+## In the event there is a failure to archive the device listed in the spool directory,
+## we will update the file in the spool directory with a counter.  This number controls
+## how many iterations must fail before a notification email is sent.  Once the notification
+## email has been sent, it will remove the spool file.  This will limit the amount of
+## emails you will recieve to just ONE for each 5 failures.  The only way that this failed
+## device will try again is if a new file is created in the spool directory.  You can
+## do that manually or cause another SNMP trap to trigger an update.
+##############################################################################
+
+# Get the config info
+[ ! -r /etc/onabase ] && echo "[$0] ERROR: Unable to read /etc/onabase." && exit 1
+ONABASE=`cat /etc/onabase`
+. $ONABASE/etc/cfg_archive.conf
+
+
+# Process the device 
+function process_device {
+	HOST=$1
+
+	ONA_LOG "INFO => $HOST: Processing spooled archive request."
+
+	FAILURES=`cat $SPOOL_DIR/$HOST`
+        # remove the spool file
+        rm -f $SPOOL_DIR/$HOST
+
+        # If the attempt to archive fails, increment a counter
+        # and touch the spool file again
+	if ! $ARCHIVE_CMD -h $HOST
+	then
+		((FAILURES++))
+
+		# If we have failed more than 5 times send an email
+		if [ $FAILURES -gt 5 ]
+		then
+			ONA_LOG "ERROR => $HOST: Failed to archive configs. Emailing a failure notification."
+
+			# Send a notification email. It will send only once so you should pay attention to it.
+			# Once it sends, it will remove the spool file and the device will have to send
+			# another update trap before it will try again.  This is to limit the amount of emails.
+		        #### Send the email to users with the diff information
+        		sendEmail -s $MAIL_SERVER -f $MAIL_FROM -t $MAIL_TO \
+                  		-u "$(basename $0): ERROR - Unable to contact $HOST after 5 attempts." \
+                  		-m "$(basename $0): We have been unable to contact the device '$HOST' during the last 5 attempts.  Please check the $ARCHIVE_CMD process for this host."
+        		if [ $? -ne 0 ]
+        		then
+            			ONA_LOG "ERROR => There was an issue sending the notification email."
+        		fi
+			
+			# remove the file so we dont keep sending emails
+			rm -f $SPOOL_DIR/$HOST
+		else
+			# Increment the failure counter which should put it at the end of the list to process
+			ONA_LOG "ERROR => $HOST: Failed to archive configs, incrementing error counter in spoolfile."
+			echo $FAILURES > $SPOOL_DIR/$HOST
+		fi
+
+		exit 1
+	fi
+}
+
+
+# TODO: does this script need to be limited to how many instances run?  Even if you have the
+# cron job run once a minute and several of them start to process.  This just means
+# that they will work faster.  I think this is beneficial and provides a very nice
+# sliding scale
+
+# Loop through everything in the spool until we process them all
+while true
+do
+    # Break the loop if the spool dir is empty
+    [ `ls -A $SPOOL_DIR|wc -l` -gt 0 ] || break
+
+    # Process the oldest entry we find in the dir
+    process_device `ls -trA $SPOOL_DIR|head -1`
+
+done
+
+#ONA_LOG "INFO => Completed processing of spool directory."
+
+
+
+
+
+
+
+
+# start a loop through everything in the spool until we process them all
+#run the archive
+#  if there is an error, increment counter and and touch file again
+#then check again in the dir
+#  if dir is empty then exit
+#  if dir has something then process it
+#loop till empty dir

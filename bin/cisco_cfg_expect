@@ -1,0 +1,408 @@
+#!/usr/bin/expect
+##############################################################################
+## cisco_cfg_expect
+## Written by: Matt Pascoe
+##
+## License:
+##  cisco_cfg_expect (hereafter referred to as "program") is free software;
+##  you can redistribute it and/or modify it under the terms of the GNU General
+##  Public License as published by the Free Software Foundation; either version
+##  2 of the License, or (at your option) any later version.
+##  Note that when redistributing modified versions of this source code, you
+##  must ensure that this disclaimer and the above coder's names are included
+##  VERBATIM in the modified code.
+##
+## Disclaimer:
+##  This program is provided with no warranty of any kind, either expressed or
+##  implied.  It is the responsibility of the user (you) to fully research and
+##  comprehend the usage of this program.  As with any tool, it can be misused,
+##  either intentionally (you're a vandal) or unintentionally (you're a moron).
+##  THE AUTHOR(S) IS(ARE) NOT RESPONSIBLE FOR ANYTHING YOU DO WITH THIS PROGRAM
+##  or anything that happens because of your use (or misuse) of this program,
+##  including but not limited to anything you, your lawyers, or anyone else
+##  can dream up.  And now, a relevant quote directly from the GPL:
+##
+## NO WARRANTY
+##
+##  11. BECAUSE THE PROGRAM IS LICENSED FREE OF CHARGE, THERE IS NO WARRANTY
+##  FOR THE PROGRAM, TO THE EXTENT PERMITTED BY APPLICABLE LAW.  EXCEPT WHEN
+##  OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES
+##  PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED
+##  OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+##  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.  THE ENTIRE RISK AS
+##  TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU.  SHOULD THE
+##  PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING,
+##  REPAIR OR CORRECTION.
+##
+## The GNU GPL can be found at http://www.fsf.org/copyleft/gpl.html
+##
+##############################################################################
+##
+## Description
+##
+##  cisco_cfg_expect is a utility to send a configuration text file to a Cisco IOS
+##  based device or run any other types of commands via expect
+##
+##############################################################################
+
+## TODO: add option to use TFTP instead of just sending to screen.
+## TODO: do more testing on results of send.
+## TODO: allow a -f - to  do from std input.  This way you dont have to create a file, you can just paste to it.
+
+
+
+################# User definable options ############################
+# Set the default login mode.  Either telnet or ssh are your options
+set DEFAULT_LOGINMODE ssh
+# Specify the telnet command.  Allows you to specify other telnet command line options.
+set TELNETCMD "telnet"
+# Specify the ssh command.  Allows you to specify other ssh command line options.
+set SSHCMD "ssh"
+# If you wish to always save the config set WRITEMEM to 1. There will be no 
+# commandline option to override this if set to 1.
+set WRITEMEM 1
+# Some devices (6500s with 2 sup cards) can take a long time to respond
+# Adjust the default timeout for expect to something larger
+set timeout 45
+
+
+################# Start Program ######################
+set VERSION "1.02"
+set AUTHORNAME "Matt Pascoe"
+set AUTHOREMAIL "matt@opennetadmin.com"
+
+
+set send_human {.1 .3 10 .005 .005}
+set USER 0
+set HOST 0
+set PASSWORD 0
+set FILENAME 0
+set ENABLE 0
+set CFG 0
+set CMD 0
+set DEBUG 0
+
+set PROMPT ">$|> $"
+set EPROMPT "#$|# $"
+
+# Standardized logging
+proc ONA_LOG {MSG} {
+    # echo $(date +'%h %d %H:%M:%S') [ONA:$(basename $0)]: "$1"
+    puts "[exec date +%h\ %d\ %H:%M:%S] \[ONA:cisco_cfg_expect\]: $MSG"
+
+    # Log it to syslog as well
+    exec /usr/bin/logger -t \[ONA:cisco_cfg_expect\] $MSG
+}
+
+# Get the contents of onabase
+if [catch {set ONABASE [exec cat /etc/onabase]}] {
+    ONA_LOG "ERROR => Unable to read /etc/onabase."
+    exit 1
+}
+
+
+set CFG_USAGE "cisco_cfg_expect-$VERSION by $AUTHORNAME <$AUTHOREMAIL>
+
+Usage:
+  cisco_cfg_expect -h <hostname|ip> -u <username> -p <password> -f <filetosend> \[-e <enablepassword1,pw2,...>\] \[-s|-t\] \[-w\] \[-d\] \[-v\]
+
+  Required:
+    -h HOSTNAME             DNS or IP address of cisco device to configure
+    -u USERNAME		    Valid username for logging into device
+    -f FILENAME		    Path to file that will be sent to host, in IOS format
+
+  General Options:
+    -p PASSWORD		    Valid password for logging into device
+			      If one is not provided we will try the getpw utility
+    -e ENABLE               Enable password if one is required
+                              You can specify more than one to try seperated by commas
+    -s SSH                  Connect using ssh. Cannot be used with -t
+       OR
+    -t TELNET               Connect using telnet. Cannot be used with -s
+                            (default connection mode is currently: $DEFAULT_LOGINMODE)
+    -w 			    Toggles to the opposite of the default write mem setting
+                            (default: $WRITEMEM) 1=yes, 0=no
+    -d			    Set debug mode, prints more detail
+    -v                      Enable TCL level debug logging to watch expect processes
+"
+
+
+set CMD_USAGE "cisco_cmd-$VERSION by $AUTHORNAME <$AUTHOREMAIL>
+
+Usage:
+  cisco_cmd -h <hostname|ip> -u <username> -p <password> -c \"<command>\" \[-e <enablepassword1,pw2,...>\] \[-s|-t\] \[-d\] \[-v\]
+
+  Required:
+    -h HOSTNAME             DNS or IP address of cisco device to configure
+    -u USERNAME		    Valid username for logging into device
+    -c COMMAND		    IOS command to execute on device
+
+  General Options:
+    -p PASSWORD		    Valid password for logging into device
+			      If one is not provided we will try the getpw utility
+    -e ENABLE               Enable password if one is required
+                              You can specify more than one to try seperated by commas
+    -s SSH                  Connect using ssh. Cannot be used with -t
+       OR
+    -t TELNET               Connect using telnet. Cannot be used with -s
+                            (default connection mode is currently: $DEFAULT_LOGINMODE)
+    -d			    Set debug mode, prints more detail
+    -v                      Enable TCL level debug logging to watch expect processes
+"
+
+
+
+
+# Determine if the program was called as a command or a configuration
+# It is intended that cisco_cmd would be a symlink to cisco_cfg_expect
+switch -regexp $argv0 {
+    .*_cmd$ { set CMD 1; set USAGE $CMD_USAGE }
+    .*_expect$ { set CFG 1; set USAGE $CFG_USAGE }
+}
+
+# Process command line
+for {set i 0} {$i < $argc} {incr i} {
+    set arg [lindex $argv $i]
+    incr i
+
+    switch  -glob -- $arg {
+        -h  { set HOST     [ lindex $argv $i ] } 
+        -u  { set USER     [ lindex $argv $i ] } 
+	-p  { set PASSWORD [ lindex $argv $i ] }
+	-f  { set FILENAME [ lindex $argv $i ] }
+	-c  { set COMMAND  [ lindex $argv $i ] }
+	-e  { set ENABLE   [ lindex $argv $i ] }
+	-d  { set DEBUG 1 }
+	-v  { exp_internal 1 }
+	-s  { set DEFAULT_LOGINMODE ssh }
+	-w  { 
+               if {$WRITEMEM == 0} { set WRITEMEM 1 }
+               if {$WRITEMEM == 1} { set WRITEMEM 0 }
+        }
+	-t  { set DEFAULT_LOGINMODE telnet }
+        -*  { ONA_LOG "ERROR => Unknown option! $arg\n"; puts $USAGE; exit 1 }
+	default { break }
+    }
+}
+
+# Check that everything exists
+if {$USER == 0}     {ONA_LOG "ERROR => You must specify a username using -u.";puts $USAGE;exit 1 }
+if {$HOST == 0}     {ONA_LOG "ERROR => You must specify a hostname or ip using -h.";puts $USAGE;exit 1 }
+
+# If there was no password, try getting it via getpw
+if {$PASSWORD == 0} {
+    if [catch {set PASSWORD [exec $ONABASE/bin/getpw -h $HOST -t $USER -p 1]}] {
+        ONA_LOG "ERROR => $HOST: Unable to get the password using getpw program. Check for a proper host entry for type '$USER' in getpw.conf."
+        exit 1 
+    }
+} 
+
+# If password still has nothing in it, then fail
+if {$PASSWORD == 0} {
+    ONA_LOG "ERROR => Unable to determine password using -p or getpw command."
+    exit 1 
+}
+
+# Test if we are in config mode then check for file related options
+if {$CFG == 1} {
+    if {$FILENAME == 0} {ONA_LOG "ERROR => You must specify a file to send using -f.";puts $USAGE;exit 1 }
+
+    if { ! [file exists $FILENAME]} {ONA_LOG "ERROR => The file you specified does not exist.";exit 1 }
+}
+
+# Test if we are in command mode then check for command related options
+if {$CMD == 1} {
+    if {$COMMAND == 0} {ONA_LOG "ERROR => You must specify a command to send using -c.";puts $USAGE;exit 1 }
+}
+
+
+# Test that we can connect to the device
+switch $DEFAULT_LOGINMODE {
+    ssh    {set CON_PORT 22}
+    telnet {set CON_PORT 23}
+}
+
+# Try the default connection port first
+if [catch {exec netcat -z $HOST $CON_PORT}] {
+    # If it failed, then try the other port
+    switch $CON_PORT {
+        22 {set CON_PORT 23}
+        23 {set CON_PORT 22}
+    }
+    if [catch {exec netcat -z $HOST $CON_PORT}] {
+        ONA_LOG "ERROR => $HOST: Unable to connect to the device via ssh or telnet using the netcat (http://netcat.sf.net) command"
+        exit 1
+    }
+}
+
+# Send enable password
+proc RUN_ENABLE {} {
+	global ENABLE
+	global HOST
+	global ONABASE
+
+	# If there was no enable password, try getting it via getpw
+	if {$ENABLE == 0} {
+    	  if [catch {set ENABLE [exec $ONABASE/bin/getpw -h $HOST -t IOS_ENABLE]}] {
+        	ONA_LOG "ERROR => $HOST: Unable to get the enable password using getpw program. Check for a proper host entry for type 'IOS_ENABLE' in getpw.conf."
+        	exit 1
+    	  }
+	}
+
+	# If enable password still has nothing in it, then fail
+	if {$ENABLE == 0} {
+    	  ONA_LOG "ERROR => $HOST: Unable to determine enable password using -e or getpw command."
+    	  exit 1
+	}
+
+	# You can provide multiple comma separated enable passwords to try.  Newest to oldest.
+        # This is useful if you are/have changed the enable password and it could be one of a few until
+        # all devices have received the new password.
+	foreach PASS [split $ENABLE ","] {
+		send "$PASS\r"
+		expect {
+		#	"denied"	{
+		#		send "\r"
+		#		expect -re $PROMPT {send "en\r";continue}
+		#	}
+			-re "word:"	{continue}
+			-re $PROMPT	{send "en\r";expect "word:";continue}
+			-re $EPROMPT	{send "\r";return}
+		}
+	}
+	ONA_LOG "ERROR => $HOST: No more passwords to try, unable to enter enable mode. Exiting."
+	exit 1
+}
+
+#
+########### Login ################
+#
+
+
+# Lets disable the output of what expect is doing unless we are in debug mode
+log_user 0
+if {$DEBUG == 1} { log_user 1 }
+
+switch $DEFAULT_LOGINMODE {
+	telnet { spawn -noecho $TELNETCMD $HOST }
+	ssh    { spawn -noecho $SSHCMD -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST }
+}
+expect {
+
+	# Normal login path. username then password
+	"name:"	{
+		send "$USER\r"
+		expect {
+			  "ssword:" {send "$PASSWORD\r"}
+			  "PASSCODE:" {ONA_LOG "ERROR => $HOST: Reached a prompt for token (RSA), tokens are not supported.";exit 1}
+		}
+	}
+
+	# If not prompted for user name, assume that AAA external auth
+        # is down so that we need to provide the enable password.
+	"ssword:" {
+		send "$PASSWORD\r"
+		expect {
+			-re $PROMPT {send "\r"}
+                        -re $EPROMPT {send "\r"}
+                        "ssword:" {RUN_ENABLE}
+		}
+	}
+
+	# Disconnected do to an unconfigured device
+	"closed" {
+		exit 1
+	}
+
+        # 1900 switch support
+	"Selection:" {
+		send "k"
+		expect {
+			-re "name:" {
+				send "$USER\r"
+				expect "ssword:" {send "$PASSWORD\r"}
+			}
+			-re $PROMPT {send "\r"}
+			-re $EPROMPT {send "\r"}
+		}
+	}
+
+	# No login prompt, you just hit straight into the device shell
+	-re $PROMPT {
+		send "en\r"
+		RUN_ENABLE
+	}
+}
+
+# Now that we have logged in.. see if we have enabled or not.  If not, do it
+expect {
+	
+	# Not enabled, send enable password
+	-re $PROMPT {
+		send "en\r"
+		expect "word:"
+		RUN_ENABLE
+	}
+
+	# Already enabled, keep going
+	-re $EPROMPT {}
+}
+
+# "hit enter" and make sure our enable took
+send "\r"
+expect {
+	# Got the pound prompt. Must be enabled
+	-re $EPROMPT {}
+
+	# Apparently we are not allowed to enable?
+	-re $PROMPT { 
+		send "exi\r"
+		exit 1
+	}
+}
+
+#################### Process if we are in CFG mode #####################
+if {$CFG == 1} {
+    send "config term\r"
+    expect -re $EPROMPT
+    foreach LINE [split [exec cat $FILENAME] "\n"] {
+	    send "$LINE\r"
+	    expect -re $EPROMPT
+    }
+    send "\r"
+    send "\032"
+    expect -re $EPROMPT
+
+
+    # Save the configuration if -w was passed
+    if {$WRITEMEM == 1} {
+        send "wri mem\r"
+        expect -re $EPROMPT
+    }
+
+    # Wait a few to make sure it took, then exit out
+    sleep 2
+    send "exi\r"
+    if {$DEBUG == 1} {puts "\n"}
+    exit 0
+}
+
+#################### Process if we are in CMD mode #####################
+if {$CMD == 1} {
+    send -h "term length 0\r"
+    expect -re $EPROMPT
+
+    # loop through each command separated by a semicolon
+    foreach CMD [split $COMMAND ";"] {
+        send -h "$CMD\r"
+        log_user 1
+        expect -re "$CMD\r\n|$CMD\r\r\n"
+        #puts "$expect_out(buffer)"
+        expect -re $EPROMPT
+        #puts "$expect_out(buffer)"
+    }
+
+    send "exi\r"
+    puts "\n"
+    exit 0
+}

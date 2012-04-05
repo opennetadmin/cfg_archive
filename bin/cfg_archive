@@ -1,0 +1,305 @@
+#!/bin/bash
+##############################################################################
+## cfg_archive
+## Written by: Matt Pascoe <matt@opennetadmin.com>
+##
+## License:
+##  cfg_archive (hereafter referred to as "program") is free software;
+##  you can redistribute it and/or modify it under the terms of the GNU General
+##  Public License as published by the Free Software Foundation; either version
+##  2 of the License, or (at your option) any later version.
+##  Note that when redistributing modified versions of this source code, you
+##  must ensure that this disclaimer and the above coder's names are included
+##  VERBATIM in the modified code.
+##
+## Disclaimer:
+##  This program is provided with no warranty of any kind, either expressed or
+##  implied.  It is the responsibility of the user (you) to fully research and
+##  comprehend the usage of this program.  As with any tool, it can be misused,
+##  either intentionally (you're a vandal) or unintentionally (you're a moron).
+##  THE AUTHOR(S) IS(ARE) NOT RESPONSIBLE FOR ANYTHING YOU DO WITH THIS PROGRAM
+##  or anything that happens because of your use (or misuse) of this program,
+##  including but not limited to anything you, your lawyers, or anyone else
+##  can dream up.  And now, a relevant quote directly from the GPL:
+##
+## NO WARRANTY
+##
+##  11. BECAUSE THE PROGRAM IS LICENSED FREE OF CHARGE, THERE IS NO WARRANTY
+##  FOR THE PROGRAM, TO THE EXTENT PERMITTED BY APPLICABLE LAW.  EXCEPT WHEN
+##  OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES
+##  PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED
+##  OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+##  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.  THE ENTIRE RISK AS
+##  TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU.  SHOULD THE
+##  PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING,
+##  REPAIR OR CORRECTION.
+##
+## The GNU GPL can be found at http://www.fsf.org/copyleft/gpl.html
+##
+##############################################################################
+##
+## Description
+## Subversion info: $Id$
+##
+##
+## This requires dcm.pl (non newline version)
+## it also requires a version of <manufacturer>_cmd to get the configs from the devices
+## all must be in the path somewhere
+## also requires sendEmail to send out notificaitons
+## it also uses the command md5sum
+##
+##
+##############################################################################
+# Get the config info
+[ ! -r /etc/onabase ] && echo "[$0] ERROR: Unable to read /etc/onabase." && exit 1
+ONABASE=`cat /etc/onabase`
+. $ONABASE/etc/cfg_archive.conf
+
+#### Process the commandline options
+function USAGE {
+cat <<-EOF
+
+Usage: `basename $0` -h <hostname|IP> or -f <FILE> -d [-m <manufacturer>]
+
+  Required
+    -h:  FQDN or IP of the host to archive configurations for
+   OR
+    -f:  Path to filename containing list of FQDN or IPs to archive
+
+  Optional
+    -d:  Enable debug logging
+    -m:  Force a manufacturer name, determines method to contact device with
+
+Description:
+  Give either the -h or -f option as an input to what host(s) to archive
+configurations for.  The host must exist in the database.  The script will
+try to determine which connection script to use based on the manufacturer
+defined in the device model setting of this device.  You can specify the
+-m option to force the manufactuer.  If you wish to skip a host, add
+a custom attribute type of "disable_cfg_archive" with a value of Y.
+
+EOF
+}
+
+if [ $# -eq 0 ]; then
+    USAGE
+    exit 1
+fi
+
+while getopts ":h:f:m:d" options; do
+  case $options in
+    h ) HST=$OPTARG;;
+    f ) FILE=$OPTARG;FILEFLAG=true;;
+    d ) DEBUGON=1;;
+    m ) MNF=$OPTARG;;
+    \? ) USAGE
+         exit 1;;
+    * ) USAGE
+         exit 1;;
+  esac
+done
+
+# Setup an exit status counter
+EXITCNT=0
+
+# Set the connection mode option for <manufacturer>_cmd based on the cfg_archive.conf setting
+case $CON_MODE in
+    ssh) CONMODE=-s;;
+    telnet) CONMODE=-t;;
+esac
+
+# If we have specified a local copy path, check that it exists first
+if [ -n "$LOCAL_COPY_PATH" -a ! -d "$LOCAL_COPY_PATH" ]
+then
+    ONA_LOG "ERROR => Unable to save a local copy. The local copy path is invalid: $LOCAL_COPY_PATH"
+    let EXITCNT++
+    exit
+fi
+
+function process_device {
+  HOST=$1
+  #### Check the host in the database first.. dont continue if host is not in DB
+  HOSTINFO=`$DCM_CMD -r host_display host=$HOST`
+  if [ $? -ne 0 ] 
+  then
+      ONA_LOG "ERROR => $HOST: The host specified is not in the ONA database."
+      let EXITCNT++
+      return
+  fi
+
+  DEVTYPE=`echo "$HOSTINFO"|grep device_type_id|cut -d'(' -f2-6|sed "s/)//"`
+  MANUFACTURER=`echo "$DEVTYPE"|cut -f1 -d','`
+  [ $MNF ] && MANUFACTURER="$MNF"
+
+  # Cleanup manufactuer name
+  MANUFACTURER=`echo "$MANUFACTURER"|sed "s/\ /_/g"|tr [:upper:] [:lower:]`
+
+  # test to see if we have a <manufacturer>_cmd script to talk to the device with
+  if ! which $ONABASE/bin/${MANUFACTURER}_cmd >/dev/null
+  then
+    ONA_LOG "ERROR => $HOST: Unsupported manufacturer type: $MANUFACTURER"
+    let EXITCNT++
+    return
+  fi
+
+  [ -z $DEBUGON ] || ONA_LOG "DEBUG => $HOST: Using manufacturer type: $MANUFACTURER"
+
+  #### Check that the custom attribute "disable_cfg_archive" is not set
+  HASDISABLEFLAG=`$DCM_CMD -r custom_attribute_display host=$HOST type=disable_cfg_archive`
+  if [ $? -eq 0 ]
+  then
+    if [ $HASDISABLEFLAG -eq 1 ]
+    then
+        ONA_LOG "INFO => $HOST: The host specified has the disable_cfg_archive flag set, skipping."
+        return
+    fi
+  fi
+
+  # left this here for testing/debug.. should set this in the cfg_archive.conf file
+  #CISCO_DEV_COMMANDS=( "show start:IOS_CONFIG" "show version:IOS_VERSION" )
+
+  # pull in the manufacturer specific device commands from the config
+  DEV_COMMANDS=`echo ${MANUFACTURER}_DEV_COMMANDS|tr [:lower:] [:upper:]`
+  # figure out how many entries are in the array
+  eval CMDNUM=\${#${DEV_COMMANDS}[@]}
+
+  # Test that we have a dev command variable set
+  if [ $CMDNUM -eq 0 ]
+  then
+    ONA_LOG "ERROR => $HOST: Unable to determine commands, please define dev command variable: $DEV_COMMANDS"
+    let EXITCNT++
+    return
+  fi
+
+  # Use a manufacturer specific username from cfg_archive.cfg file if specified
+  # otherwise the system will just use the default $USERNAME value
+  MNF_USERVAR=`echo ${MANUFACTURER}_USERNAME|tr [:lower:] [:upper:]`
+  [ -z ${!MNF_USERVAR} ] || USERNAME=${!MNF_USERVAR}
+
+  # Loop through all the commands provided in the <manufacturer>_DEV_COMMANDS array
+  for ((i=0;i<$CMDNUM;i++))
+  do 
+    #### Split out the command and the command type from the COMMANDS array
+    eval ENTRY=\${${DEV_COMMANDS}[${i}]}
+    COMMAND=`echo $ENTRY|cut -d: -f1`
+    CMDTYPE=`echo $ENTRY|cut -d: -f2`
+
+    #### Execute the command on the remote device
+    [ -z $DEBUGON ] || ONA_LOG "DEBUG => $HOST: '$COMMAND' information is being downloaded..."
+    [ -z $DEBUGON ] || ONA_LOG "DEBUG => $HOST: [${COMMUNICATION_CMD_PATH}/${MANUFACTURER}_cmd -c '$COMMAND' -h $HOST -u $USERNAME $CONMODE]"
+    CMDOUTPUT=`${COMMUNICATION_CMD_PATH}/${MANUFACTURER}_cmd -c "$COMMAND" -h $HOST -u $USERNAME $CONMODE`
+    if [ $? -ne 0 ] 
+    then
+	ONA_LOG "ERROR => $HOST: There was an issue contacting $HOST."
+	let EXITCNT++
+	return
+    fi
+
+    #### Process output of the command info
+    OUTPUT_MAIN=$CMDOUTPUT
+    # GLOBAL applies to ALL command output for any command.  Used to strip common things like the command prompts etc.
+    [ -f $SED_PREFIX.$MANUFACTURER.GLOBAL.sed ]    && OUTPUT_MAIN=`echo "$CMDOUTPUT"|sed -f $SED_PREFIX.$MANUFACTURER.GLOBAL.sed`
+    # If present, the PASSWORD sed script will be used on ALL output and is intended to hide passwords and hashes etc.
+    [ -f $SED_PREFIX.$MANUFACTURER.PASSWORD.sed ]  && OUTPUT_MAIN=`echo "$OUTPUT_MAIN"|sed -f $SED_PREFIX.$MANUFACTURER.PASSWORD.sed`
+    # If present, we will envoke sed scripts for each command type specified.  This can be used to manipulate user specfic things from the output.
+    [ -f $SED_PREFIX.$MANUFACTURER.$CMDTYPE.sed ]  && OUTPUT_MAIN=`echo "$OUTPUT_MAIN"|sed -f $SED_PREFIX.$MANUFACTURER.$CMDTYPE.sed`
+
+    #### Test that our output is not empty
+    if [ ${#OUTPUT_MAIN} -lt 5 ]
+    then
+	ONA_LOG "ERROR => $HOST: '$COMMAND' output was less than 5 characters long."
+	let EXITCNT++
+	return
+    fi
+    
+
+    #### Calcuate the checksums for both versions
+    OUTPUT_MD5SUM1=`$DCM_CMD -r config_chksum host=$HOST type=$CMDTYPE`
+    # Have to ignore errors here for now, this breaks when its the FIRST config archive since there are no entries yet
+    # should be able to fix the handling of the config_chksum module for this case
+    #if [ $? -ne 0 ]
+    #then
+#	ONA_LOG "ERROR => $HOST: There was an issue retrieving the checksum from the database."
+#        let EXITCNT++
+#	return
+#    fi
+
+    #### Get the checksum for the new config
+    OUTPUT_MD5SUM2=`echo "$OUTPUT_MAIN"|md5sum|awk '{print $1}'`
+
+    [ -z $DEBUGON ] || ONA_LOG "DEBUG => $HOST: '$COMMAND' - CHECKSUMS: $OUTPUT_MD5SUM1 $OUTPUT_MD5SUM2" 
+    if [ "$OUTPUT_MD5SUM1" == "$OUTPUT_MD5SUM2" ]
+    then
+        [ -z $DEBUGON ] || ONA_LOG "DEBUG => $HOST: '$COMMAND' information has not changed."
+    else
+	#### If the data has changed, then add the config to the archive, get the diff output, and email notificaitons
+
+        # If this is a show startup (ie. IOS_CONFIG) and we want a local copy, save it now
+        # OK so its mostly unchanged, I do remove trailing crap and the first byte kount usage stuff
+        # Only the first one in the DEV_COMMANDs array will be stored in the local path if it is defined
+        #if [ "$CMDTYPE" == "IOS_CONFIG" -a -n "$LOCAL_COPY_PATH" ] 
+        if [ $i -eq 0 -a -n "$LOCAL_COPY_PATH" ]
+        then
+            [ -z $DEBUGON ] || ONA_LOG "DEBUG => Saving a local copy of the $CMDTYPE config to '$LOCAL_COPY_PATH/$HOST.cfg'."
+	    echo "$CMDOUTPUT"|sed "/Using .* out of .* bytes/d; /^end/,/G/ {/^end/p;d;}" > $LOCAL_COPY_PATH/$HOST.cfg
+        fi
+
+        ONA_LOG "INFO => $HOST: '$COMMAND' information has changed, updating archive..."
+        echo "$OUTPUT_MAIN"|$DCM_CMD -r config_add host=$HOST type=$CMDTYPE config=-
+    	if [ $? -ne 0 ]
+    	then
+            ONA_LOG "ERROR => $HOST: Unable to add new config to database archive."
+	    ERRMSG="ERROR: Unable to update the archive, dumping full config output for reference.$OUTPUT_MAIN"
+            let EXITCNT++
+	    # I am not going to 'return' here so that I can hopefully email the info to the user
+            #return
+	else
+            #### Get the DIFF text of the last to entries in the archive
+            OUTPUT_DIFF=`$DCM_CMD -r config_diff host=$HOST type=$CMDTYPE`
+            if [ $? -ne 0 ]
+            then
+	        ONA_LOG "ERROR => $HOST: There was an issue retrieving the configuration DIFF output from the database."
+	        ERRMSG="ERROR: There was an issue retrieving the configuration DIFF output from the database.\
+The configuration was archived however, we simply couldn't show you the DIFF output here.$ERRMSG"
+                let EXITCNT++
+	        # I am not going to 'return' here so that I can hopefully email the info to the user
+                #return
+            fi
+    	fi
+
+	#### Try to get an FQDN using the host command to help identify the host
+	FQDN=`host -W 2 $HOST|sed -e "s/\(.*\) has add.*/\1/" -e "s/.*pointer \(.*\)$/\1/"|head -1`
+
+        #### Send the email to users with the diff information
+        #### NOTE: sometimes the initial import is too large to show the diff and will fail to send the email.  look into fixing this.
+        sendEmail -s $MAIL_SERVER -f $MAIL_FROM -t $MAIL_TO \
+                  -u "Updated $COMMAND: $HOST ($FQDN)" \
+                  -m "The device '$HOST' has updated its '$COMMAND' output.${ERRMSG}$OUTPUT_DIFF "
+        if [ $? -ne 0 ]
+        then
+ 	    ONA_LOG "ERROR => $HOST: There was an issue sending the notification email."
+            let EXITCNT++
+            return
+        fi
+    fi
+  done
+}
+
+#### Main starts here
+# Check if they have given a file or a single host
+if [ $FILEFLAG ] 
+then
+	# If they also passed a host, go ahead and process it too
+	[ $HST ] && process_device $HST
+
+	# Process each entry in the file
+	for ENTRY in `cat $FILE`
+	do
+		process_device $ENTRY
+	done
+else
+	#### If they only gave a single host, process it
+	process_device $HST
+fi
+
+exit $EXITCNT

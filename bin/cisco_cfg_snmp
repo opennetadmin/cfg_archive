@@ -1,0 +1,352 @@
+#!/bin/bash
+##############################################################################
+## cisco_cfg_snmp
+## Written by: Matt Pascoe <matt@opennetadmin.com>
+##
+## License:
+##  cisco_cfg_snmp (hereafter referred to as "program") is free software;
+##  you can redistribute it and/or modify it under the terms of the GNU General
+##  Public License as published by the Free Software Foundation; either version
+##  2 of the License, or (at your option) any later version.
+##  Note that when redistributing modified versions of this source code, you
+##  must ensure that this disclaimer and the above coder's names are included
+##  VERBATIM in the modified code.
+##
+## Disclaimer:
+##  This program is provided with no warranty of any kind, either expressed or
+##  implied.  It is the responsibility of the user (you) to fully research and
+##  comprehend the usage of this program.  As with any tool, it can be misused,
+##  either intentionally (you're a vandal) or unintentionally (you're a moron).
+##  THE AUTHOR(S) IS(ARE) NOT RESPONSIBLE FOR ANYTHING YOU DO WITH THIS PROGRAM
+##  or anything that happens because of your use (or misuse) of this program,
+##  including but not limited to anything you, your lawyers, or anyone else
+##  can dream up.  And now, a relevant quote directly from the GPL:
+##
+## NO WARRANTY
+##
+##  11. BECAUSE THE PROGRAM IS LICENSED FREE OF CHARGE, THERE IS NO WARRANTY
+##  FOR THE PROGRAM, TO THE EXTENT PERMITTED BY APPLICABLE LAW.  EXCEPT WHEN
+##  OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES
+##  PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED
+##  OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+##  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.  THE ENTIRE RISK AS
+##  TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU.  SHOULD THE
+##  PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING,
+##  REPAIR OR CORRECTION.
+##
+## The GNU GPL can be found at http://www.fsf.org/copyleft/gpl.html
+##
+##############################################################################
+##
+## Description
+## Subversion info: $Id: cisco_cfg_snmp 7 2008-10-08 18:16:03Z mdp $
+##
+##  cisco_cfg_snmp is a utility is a utility to send a configuration text file to a Cisco IOS
+##  based device via SNMP
+##
+##############################################################################
+[ ! -r /etc/onabase ] && echo "[$0] ERROR: Unable to read /etc/onabase." && exit 1
+ONABASE=`cat /etc/onabase`
+
+
+########################## User definable options ############################
+## Sets the default TFTP directory location on the local system
+TFTP_DIR="/tftpboot/"
+
+## Here you can adjust the basics of the snmp commands. The output is determined
+## in the script below so it is not wise to adjust that part.  The community string
+## is determined via the command line so it should not be placed here.
+SNMPSET_CMD="snmpset -v1 "
+SNMPGET_CMD="snmpget -v1 "
+
+##############################################################################
+
+########################## System options, dont change #######################
+PRGM=`basename $0`
+VERSION="1.00"
+AUTHORNAME="Matt Pascoe"
+AUTHOREMAIL="matt@opennetadmin.com"
+LOCALSRV=`hostname --fqdn`
+# MIB OID mappings
+MIB_COPY_PROTOCOL=.1.3.6.1.4.1.9.9.96.1.1.1.1.2		#1-tftp,2-ftp,3-rcp,4-scp,5-sftp
+MIB_COPY_SRCTYPE=.1.3.6.1.4.1.9.9.96.1.1.1.1.3		#1-network,2-ios,3-startup,4-running,5-terminal
+MIB_COPY_DESTTYPE=.1.3.6.1.4.1.9.9.96.1.1.1.1.4		#1-network,2-ios,3-startup,4-running,5-terminal
+MIB_COPY_SRVADDR=.1.3.6.1.4.1.9.9.96.1.1.1.1.5
+MIB_COPY_FILENAME=.1.3.6.1.4.1.9.9.96.1.1.1.1.6
+MIB_COPY_STATE=.1.3.6.1.4.1.9.9.96.1.1.1.1.10		#1-waiting,2-running,3-successful,4-failed
+MIB_COPY_FAILCAUSE=.1.3.6.1.4.1.9.9.96.1.1.1.1.13	#1-unknown,2-badFileName,3-timeout,4-noMem,5-noConfig,
+							#6-unsupportedProtocol,7-someConfigApplyFailed
+MIB_COPY_COMMAND=.1.3.6.1.4.1.9.9.96.1.1.1.1.14		#1-active,2-notInService,3-notReady,4-createAndGo,5-createAndWait,6-destroy
+MIB_CONF_SRC=.1.3.6.1.4.1.9.9.96.1.1.1.1.3		#3-startup,4-running
+MIB_CONF_DST=.1.3.6.1.4.1.9.9.96.1.1.1.1.4		#3-startup,4-running
+MIB_CONF_CMD=.1.3.6.1.4.1.9.9.96.1.1.1.1.14		#1-active
+MIB_CONF_STAT=.1.3.6.1.4.1.9.9.96.1.1.1.1.10		#1-unknown,2-badFileName,3-timeout,4-noMem,5-noConfig
+##############################################################################
+
+
+
+
+
+
+###############################################################################################
+## FUNCTION:
+##   ABEND ($*)
+##
+##
+## DESCRIPTION:
+##   Simply prints the message that was passed to it and exits with code 1
+##   
+##
+## Example:
+##   ABEND "This was a problem"
+##
+###############################################################################################
+ABEND () {
+	echo "ERROR=> $*" 1>&2
+	exit 1
+}
+
+
+
+
+
+
+
+
+###############################################################################################
+## FUNCTION:
+##   FAILCAUSE ()
+##
+##
+## DESCRIPTION:
+##   Connects to the device using snmp and queries it to determine why the snmp copy failed
+##   
+##
+## Example:
+##   FAILCAUSE ()
+##
+###############################################################################################
+FAILCAUSE () {
+	FAILVAL=`$SNMPGET_CMD -OQnv -c $SNMPRW $DEVICE ${MIB_COPY_FAILCAUSE}.$RAND|sed "s/^.//"`
+	case $FAILVAL in
+		1)	ABEND "ERROR LOADING $FILE:  UNKNOWN";;
+		2)	ABEND "ERROR LOADING $FILE:  BadFileName";;
+		3)	ABEND "ERROR LOADING $FILE:  timeout";;
+		4)	ABEND "ERROR LOADING $FILE:  noMem";;
+		5)	ABEND "ERROR LOADING $FILE:  noConfig";;
+		6)	ABEND "ERROR LOADING $FILE:  unsupportedProtocol";;
+		7)	ABEND "ERROR LOADING $FILE:  someConfigApplyFailed";;
+		*)	ABEND "ERROR LOADING $FILE:  UNKNOWN ERROR???? (${FAILVAL})";;
+	esac
+}
+
+
+
+
+
+
+
+###############################################################################################
+## FUNCTION:
+##   WRITE_MEM ()
+##
+##
+## DESCRIPTION:
+##   Connects to the device using snmp and instructs it to perform a write memory operation
+##   AKA "copy run start"
+##   
+##   At this point the testing has been disabled to help speed things up
+##
+## Example:
+##   WRITE_MEM ()
+##
+###############################################################################################
+WRITE_MEM () {
+	RAND=$RANDOM
+	if $SNMPSET_CMD -c $SNMPRW -r 2 $DEVICE ${MIB_CONF_SRC}.$RAND i 4 2>&1 > /dev/null		# copy from running
+	then
+		$SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_CONF_DST}.$RAND i 3 2>&1 > /dev/null		# copy to start
+		$SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_CONF_CMD}.$RAND i 1 2>&1 > /dev/null		# start the copy
+
+#		STATUSVAL=`$SNMPGET_CMD -OQnv -c $SNMPRW $DEVICE ${MIB_CONF_STAT}.$RAND`
+#		[ -z "$DEBUGFLAG" ] || echo "Status=$STATUSVAL"
+#
+#		LOOP=Y
+#		while [ "$LOOP" = "Y" ]
+#		do
+#			[ -z "$DEBUGFLAG" ] || echo "~\c"
+#			sleep 2
+#			STATUSVAL=`$SNMPGET_CMD -OQnv -c $SNMPRW $DEVICE ${MIB_CONF_STAT}.$RAND|sed "s/^.//"`
+#			case $STATUSVAL in
+#				1)	;;
+#				2)	;;
+#				3)	LOOP=N ;;
+#				4)	FAILCAUSE;;
+#			esac
+#		done
+
+## Probably should do the cleanup of rowstatus (destroy) here too?
+
+	else
+		ABEND "Unable to connect to $DEVICE via SNMP!"
+	fi
+}
+
+
+
+
+###############################################################################################
+## FUNCTION:
+##   LOAD_CONFIG ()
+##
+##
+## DESCRIPTION:
+##   Connects to the device using snmp and instructs it to download the specified file
+##   via tftp.  Once it has set up the download, it continues communicating with the device
+##   to test the status of the download.
+##
+## Example:
+##   LOAD_CONFIG ()
+##
+###############################################################################################
+LOAD_CONFIG () {
+	echo "INFO=> Loading configuration file \"${CONF_FILE}\" to $DEVICE from $LOCALSRV using SNMP..."
+	RAND=$RANDOM
+	[ -z "$DEBUGFLAG" ] || echo $SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_COPY_SOURCENAME}.$RAND s $CONF_FILE
+	[ -z "$DEBUGFLAG" ] || echo $SNMPSET_CMD -c $SNMPRW -r 2 $DEVICE ${MIB_COPY_PROTOCOL}.$RAND i 1
+	if NUL=`$SNMPSET_CMD -c $SNMPRW -r 2 $DEVICE ${MIB_COPY_PROTOCOL}.$RAND i 1 2> /dev/null`			# set to TFTP
+	then
+		$SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_COPY_SRCTYPE}.$RAND i 1 2>&1 > /dev/null			# copy from network
+		[ -z "$DEBUGFLAG" ] || echo $SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_COPY_SRCTYPE}.$RAND i 1 
+		$SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_COPY_DESTTYPE}.$RAND i 4 2>&1 > /dev/null			# copy to running config
+		$SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_COPY_SRVADDR}.$RAND a ${LOCALSRV} 2>&1 > /dev/null	# Server IP to copy from
+		[ -z "$DEBUGFLAG" ] || echo $SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_COPY_SRVADDR}.$RAND a ${LOCALSRV}
+		$SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_COPY_FILENAME}.$RAND s $CONF_FILE 2>&1 > /dev/null	# Filename of conf file
+		$SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_COPY_COMMAND}.$RAND i 1 2>&1 > /dev/null			# start the copy
+		STATUSVAL=`$SNMPGET_CMD -OQnv -c $SNMPRW $DEVICE ${MIB_COPY_STATE}.$RAND`
+		[ -z "$DEBUGFLAG" ] || echo "Status=$STATUSVAL"
+	
+		LOOP=Y
+		LOOPCNT=0
+		while [ "$LOOP" = "Y" ]
+		do
+			echo -n "~"
+			sleep 2
+			STATUSVAL=`$SNMPGET_CMD -OQnv -c $SNMPRW $DEVICE ${MIB_COPY_STATE}.$RAND|sed "s/^.//"`
+			case $STATUSVAL in
+				1)	;; # Waiting
+				2)	;; # Running
+				3)	#$SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_COPY_COMMAND}.$RAND i 6 2>&1 > /dev/null	# stop and cleanup
+					WRITE_MEM
+					echo "\nINFO=> The file \"$CONF_FILE\" Successfully loaded to $DEVICE."
+					LOOP=N ;; # Success
+				4)	FAILCAUSE;; # Failed
+			esac
+			LOOPCNT=`expr $LOOPCNT + 1`
+			if [ $LOOPCNT -ge 8 ]
+			then
+				$SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_COPY_COMMAND}.$RAND i 6 2>&1 > /dev/null	# stop and cleanup
+				echo $SNMPSET_CMD -c $SNMPRW $DEVICE ${MIB_COPY_COMMAND}.$RAND i 6 
+				echo 
+				ABEND "Device has not responded to status checks. Timing out as failure."
+			fi
+		done
+	else
+		ABEND "Unable to connect to $DEVICE via SNMP! Maybe no write access?"
+	fi
+}
+
+
+
+
+###################### MAIN Program ##################################
+
+USAGE="$PRGM-$VERSION by $AUTHORNAME <$AUTHOREMAIL>
+
+Usage:
+  $PRGM [-d] -h <hostname|IP> -f <filename> [-c <community>] [-s <serverip>] [-t <tftppath>]
+
+  Required:
+    -h HOSTNAME or IP     Host name or IP address to process
+    -f FILENAME		  Filename to push to running config (relative to $TFTP_DIR)
+
+  General Options:
+    -c COMMUNITY	  The SNMP community string of the device, must be RW capable
+    -s IP	 	  The ip of the server to tftp the file from (defaults to value of hostname --fqdn)
+    -t PATH		  The path to the base tftp directory (default: $TFTP_DIR)
+    -d              	  Turn on Debugging
+
+"
+
+## Process Command line options
+set -- `getopt dh:f:s:c:t: $*`
+
+if [ $# -eq 1 ]
+then
+	echo "$USAGE"
+	exit 2
+fi
+
+while [ $# -gt 0 ]
+do
+	case $1 in
+		-d)     DEBUGFLAG="Y"
+			shift ;;
+		-h)     DEVICE=$2
+			shift 2 ;;
+		-f)     CONF_FILE=$2
+			shift 2 ;;
+		-s)     LOCALSRV=$2
+			shift 2 ;;
+		-c)     COMMUNITY=$2
+			shift 2 ;;
+		-t)     TFTP_DIR=$2
+			shift 2 ;;
+		--)     shift
+			break ;;
+	esac
+done
+
+
+## Validate that proper options were passed
+[ -n "$DEVICE" ]	|| ABEND "You must specify a device name or ip address to send configuration to"
+[ -n "$CONF_FILE" ]	|| ABEND "You must specify a file name to send to $DEVICE"
+
+[ -f "${TFTP_DIR}$CONF_FILE" ]	|| echo "WARNING: The file $CONF_FILE does not exist on this system under the directory $TFTP_DIR."
+
+if [ -z "$COMMUNITY" ] 
+then
+    # No community passed on commandline, try getting via getpw
+    LIST=`$ONABASE/bin/getpw -h $DEVICE -t snmprw`
+    if [ $? -ne 0 ]
+    then
+        echo "ERROR=> Unable to get the password for $DEVICE using getpw program. Check for a proper host entry for type 'snmprw' in getpw.conf"
+        ABEND "$LIST"
+    fi
+else
+    LIST=$COMMUNITY
+fi
+
+# Loop through each password we get from getpw until we get connected, or run out of passwords
+for SNMPRW in `echo "$LIST"|sed "s/,/ /g"`
+do
+    # Connect to the device and see if it is available and that the password works
+    [ -z "$DEBUGFLAG" ] || echo $SNMPGET_CMD -Le -r 1 -c $SNMPRW $DEVICE .1.3.6.1.2.1.1.2.0
+    NUL=`$SNMPGET_CMD -Le -r 1 -c $SNMPRW $DEVICE .1.3.6.1.2.1.1.2.0 2> /dev/null`
+    if [ $? -ne 0 ]
+    then
+	continue
+    fi
+    FOUND_PASSWD=1
+done
+
+# If we have a good password, lets run with it
+if [ "$FOUND_PASSWD" ]
+then
+    LOAD_CONFIG
+else
+    echo "Unable to connect to $DEVICE"
+    ABEND "Please make sure that proper SNMP community strings have been set and that the device is on the network."
+fi
+
+exit 0
