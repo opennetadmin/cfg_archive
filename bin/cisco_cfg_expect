@@ -240,6 +240,8 @@ proc RUN_ENABLE {} {
 	global ENABLE
 	global HOST
 	global ONABASE
+        global PROMPT
+        global EPROMPT
 
 	# If there was no enable password, try getting it via getpw
 	if {$ENABLE == 0} {
