@@ -193,7 +193,7 @@ if (file_exists($reqfile)) {
 } else {
     $window['html'] .= "&nbsp;&nbsp;&nbsp;&nbsp;<img src='{$images}/silk/error.png' border='0'> <font color=\"green\">INFO=> Unable to find dcm.pl, try the following:</font><br>";
     // Provide some information to the user on how to fix the problem manually
-    $window['html'] .= "<font color=\"orange\">Please install <a href=\"http://opennetadmin.com/docs/utils/dcm.pl\">dcm.pl</a>:<br>Make a symlink or install into {$onainstalldir}/bin</font><br><br>";
+    $window['html'] .= "<font color=\"orange\">Please install <a href=\"https://github.com/opennetadmin/dcm\">dcm.pl</a>:<br>Make a symlink or install into {$onainstalldir}/bin</font><br><br>";
 }
 
 $window['html'] .= "<br><b>Disabling install script:</b><br>";
