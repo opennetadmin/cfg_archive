@@ -9,8 +9,8 @@ The two default commands that are archived on a Cisco device are a `show startup
 Requirements
 ============
   * Working ONA core system
-  * dcm.pl
-  * getpw - Also a requirement for cisco_cfg so it should be installed then
+  * `dcm.pl` ONA commandline tool. [Download here](https://github.com/opennetadmin/dcm)
+  * `getpw` for password lookups. [Download here](https://github.com/opennetadmin/getpw)
   * `sendEmail` for notification messages. [Download here](http://caspian.dotconf.net/menu/Software/SendEmail/) or use the package from your distribution.
 
 Install
