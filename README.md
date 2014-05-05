@@ -11,7 +11,7 @@ Requirements
   * Working ONA core system
   * dcm.pl
   * getpw - Also a requirement for cisco_cfg so it should be installed then
-  * sendEmail - A perl script used to send notification emails
+  * `sendEmail` for notification messages. [Download here](http://caspian.dotconf.net/menu/Software/SendEmail/) or use the package from your distribution.
 
 Install
 =======
