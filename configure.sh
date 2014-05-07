@@ -36,6 +36,7 @@ then
   # move our initial configuration files into place
   # this is the destructive part if you have modified your etc configurations.  This resets back to initial installation
   install -m 644 -t $ONABASE/etc etc/*
+  install -m 644 -t $ONABASE/sql sql/*
 
   # Create local archive directory
   [ -d $ONABASE/cfg_archive_local ] || mkdir $ONABASE/cfg_archive_local
