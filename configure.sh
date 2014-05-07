@@ -20,6 +20,7 @@ then
   rm $ONABASE/bin/cisco_cfg_snmp
   rm $ONABASE/bin/juniper_cmd
   rm $ONABASE/bin/netscreen_cmd
+  rm $ONABASE/bin/extreme_networks_cmd
 
   # Create new symlinks
   ln -s $ONABASE/www/local/plugins/cfg_archive/bin/cfg_archive $ONABASE/bin/cfg_archive
@@ -30,6 +31,7 @@ then
   ln -s $ONABASE/www/local/plugins/cfg_archive/bin/cisco_cfg_snmp $ONABASE/bin/cisco_cfg_snmp
   ln -s $ONABASE/www/local/plugins/cfg_archive/bin/juniper_cmd $ONABASE/bin/juniper_cmd
   ln -s $ONABASE/www/local/plugins/cfg_archive/bin/juniper_cmd $ONABASE/bin/netscreen_cmd
+  ln -s $ONABASE/www/local/plugins/cfg_archive/bin/extreme_networks_cmd $ONABASE/bin/extreme_networks_cmd
 
   # move our initial configuration files into place
   # this is the destructive part if you have modified your etc configurations.  This resets back to initial installation
