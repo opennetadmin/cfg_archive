@@ -1,7 +1,7 @@
 cfg_archive
 ===========
 
-This tool provides a method to connect to hosts and execute various commands which will be archived in the database.  This module provides similar functionality to the excellent http://www.shrubbery.net/rancid/ tool.  The basic concepts and practices of the two tools differ slightly but I believe this tool to have a few advantages (IMHO of course).  This tool currently only supports Cisco and Juniper Netscreen devices.
+This tool provides a method to connect to hosts and execute various commands which will be archived in the database.  This module provides similar functionality to the excellent http://www.shrubbery.net/rancid/ tool.  The basic concepts and practices of the two tools differ slightly but I believe this tool to have a few advantages (IMHO of course).  This tool currently only supports Cisco, Cisco ASA, Juniper Netscreen, Motorola WiNG Wireless Managers (also sold by Extreme Networks, Brocade, and Symbol), and Extreme Networks switching devices.
 
 The two default commands that are archived on a Cisco device are a `show startup` and `show version` commands.  This gives enough information to do configuration restoration and configuration differences.  The output of each of these commands is timestamped and an md5 sum is calculated.  There are several ways to update the archive such as via snmp config traps which will update each time the configuration of the device changes, or simply via a scheduled cron update.
 

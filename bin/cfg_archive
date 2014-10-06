@@ -211,7 +211,6 @@ function process_device {
 	let EXITCNT++
 	return
     fi
-    
 
     #### Calcuate the checksums for both versions
     OUTPUT_MD5SUM1=`$DCM_CMD -r config_chksum host=$HOST type=$CMDTYPE`
