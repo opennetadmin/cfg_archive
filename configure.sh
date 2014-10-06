@@ -29,8 +29,7 @@ then
   ln -s $ONABASE/www/local/plugins/cfg_archive/bin/cfg_archive_procspool $ONABASE/bin/cfg_archive_procspool
   ln -s $ONABASE/www/local/plugins/cfg_archive/bin/cfg_archive_cisco_trapscript $ONABASE/bin/cfg_archive_cisco_trapscript
   ln -s $ONABASE/www/local/plugins/cfg_archive/bin/cisco_cfg_expect $ONABASE/bin/cisco_cfg_expect
-# ln -s $ONABASE/bin/cisco_cfg_expect $ONABASE/bin/cisco_cmd
-  ln -s $ONABASE/www/local/plugins/cfg_archive/bin/cisco_cmd $ONABASE/bin/cisco_cmd
+  ln -s $ONABASE/bin/cisco_cfg_expect $ONABASE/bin/cisco_cmd
   ln -s $ONABASE/www/local/plugins/cfg_archive/bin/cisco_asa_cmd $ONABASE/bin/cisco_asa_cmd
   ln -s $ONABASE/www/local/plugins/cfg_archive/bin/motorola_wing_cmd $ONABASE/bin/motorola_wing_cmd
   ln -s $ONABASE/www/local/plugins/cfg_archive/bin/cisco_cfg_snmp $ONABASE/bin/cisco_cfg_snmp
