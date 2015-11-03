@@ -45,7 +45,7 @@ do
 done
 
 # Create local archive directory
-[ -d $ONABASE/cfg_archive_local ] || mkdir $ONABASE/cfg_archive_local
+[ -d $ONABASE/cfg_archive_local ] || mkdir $ONABASE/cfg_archive_local && chmod 0600 $ONABASE/cfg_archive_local
 
 # Create spool directory
 [ -d $ONABASE/spool ] || mkdir $ONABASE/spool
