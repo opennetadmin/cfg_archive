@@ -212,6 +212,16 @@ function process_device {
 	return
     fi
 
+    # Check if there is a local copy at all, if not make one.
+    # If this is a show startup (ie. IOS_CONFIG) and we want a local copy, save it now
+    # OK so its mostly unchanged, I do remove trailing crap and the first byte kount usage stuff
+    # Only the first one in the DEV_COMMANDs array will be stored in the local path if it is defined
+    if [ $i -eq 0 -a -n "$LOCAL_COPY_PATH" -a ! -f $LOCAL_COPY_PATH/$HOST.cfg ]
+    then
+        [ -z $DEBUGON ] || ONA_LOG "DEBUG => Saving first local copy of the $CMDTYPE config to '$LOCAL_COPY_PATH/$HOST.cfg'."
+        echo "$CMDOUTPUT"|sed "/Using .* out of .* bytes/d; /^end/,/G/ {/^end/p;d;}" > $LOCAL_COPY_PATH/$HOST.cfg
+    fi
+
     #### Calcuate the checksums for both versions
     OUTPUT_MD5SUM1=`$DCM_CMD -r config_chksum host=$HOST type=$CMDTYPE`
     # Have to ignore errors here for now, this breaks when its the FIRST config archive since there are no entries yet

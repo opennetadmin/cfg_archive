@@ -6,15 +6,16 @@ type -P netcat &>/dev/null || { echo "Unable to find netcat binary. Please insta
 
 # Remove existing symlinks
 # cisco_cmd is not in this list as it is a special case below
+# cisco_ucs_cmd is not in this list as it is a special case below
 # netscreen_cmd is not in this list as it is a special case below
 BINARIES=( \
   "cfg_archive" \
   "cfg_archive_procspool" \
   "cfg_archive_cisco_trapscript" \
+  "cisco_cfg_snmp" \
   "cisco_cfg_expect" \
   "cisco_asa_cmd" \
   "motorola_wing_cmd" \
-  "cisco_cfg_snmp" \
   "juniper_cmd" \
   "extreme_networks_cmd" \
 )
@@ -27,6 +28,8 @@ done
 # special case binaries
 [ -f $ONABASE/bin/cisco_cmd ] && rm $ONABASE/bin/cisco_cmd
 ln -s $ONABASE/bin/cisco_cfg_expect $ONABASE/bin/cisco_cmd
+[ -f $ONABASE/bin/cisco_ucs_cmd ] && rm $ONABASE/bin/cisco_ucs_cmd
+ln -s $ONABASE/bin/cisco_cfg_expect $ONABASE/bin/cisco_ucs_cmd
 [ -f $ONABASE/bin/netscreen_cmd ] && rm $ONABASE/bin/netscreen_cmd
 ln -s $ONABASE/bin/juniper_cmd $ONABASE/bin/netscreen_cmd
 
