@@ -1,6 +1,3 @@
-# This config file is used to convert passwords to
-# a [HIDDEN] string to help protect configs stored
-# in the database.
 
 s/\(.*\)key-string 7 \S*\(.*\)/!\1key-string 7 [HIDDEN]\2/
 
@@ -12,7 +9,7 @@ s/\(.*\)password 7 \S*\(.*\)/!\1password 7 [HIDDEN]\2/
 
 # any password keyword
 #s/\(.*\)password \S*\(.*\)/!\1password [HIDDEN]\2/
-/.*password . \S*$/s/\(.*\)password \(.\) \S*\(.*\)/!\1password \2 [HIDDEN]\3/
+s/\(.*\)password \(.\) \S*\(.*\)/!\1password \2 [HIDDEN]\3/
 /.*password \S*$/s/\(.*\)password \(.*\)/!\1password [HIDDEN]\2/
 
 # tacacs keys
@@ -24,6 +21,9 @@ s/\(.*\)password 7 \S*\(.*\)/!\1password 7 [HIDDEN]\2/
 
 # snmp community strings
 s/\(.*snmp.*\)community \S*\(.*\)/!\1community [HIDDEN]\2/
+s/\(.*snmp.*\)md5 \S*\(.*\)/!\1md5 [HIDDEN]\2/
+s/\(.*snmp.*\)priv \S*\(.*\)/!\1priv [HIDDEN]\2/
+
 
 # crypto keys
 s/\(.*crypto.*\)key \S*\(.*\)/!\1key [HIDDEN]\2/

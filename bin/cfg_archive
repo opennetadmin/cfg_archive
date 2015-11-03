@@ -39,10 +39,9 @@
 ##############################################################################
 ##
 ## Description
-## Subversion info: $Id$
 ##
 ##
-## This requires dcm.pl (non newline version)
+## This requires dcm.pl
 ## it also requires a version of <manufacturer>_cmd to get the configs from the devices
 ## all must be in the path somewhere
 ## also requires sendEmail to send out notificaitons
@@ -155,9 +154,6 @@ function process_device {
     fi
   fi
 
-  # left this here for testing/debug.. should set this in the cfg_archive.conf file
-  #CISCO_DEV_COMMANDS=( "show start:IOS_CONFIG" "show version:IOS_VERSION" )
-
   # pull in the manufacturer specific device commands from the config
   DEV_COMMANDS=`echo ${MANUFACTURER}_DEV_COMMANDS|tr [:lower:] [:upper:]`
   # figure out how many entries are in the array
@@ -190,15 +186,15 @@ function process_device {
     CMDOUTPUT=`${COMMUNICATION_CMD_PATH}/${MANUFACTURER}_cmd -c "$COMMAND" -h $HOST -u $USERNAME $CONMODE`
     if [ $? -ne 0 ] 
     then
-	ONA_LOG "ERROR => $HOST: There was an issue contacting $HOST."
-	let EXITCNT++
-	return
+      ONA_LOG "ERROR => $HOST: There was an issue contacting $HOST."
+      let EXITCNT++
+      return
     fi
 
     #### Process output of the command info
     OUTPUT_MAIN=$CMDOUTPUT
     # GLOBAL applies to ALL command output for any command.  Used to strip common things like the command prompts etc.
-    [ -f $SED_PREFIX.$MANUFACTURER.GLOBAL.sed ]    && OUTPUT_MAIN=`echo "$CMDOUTPUT"|sed -f $SED_PREFIX.$MANUFACTURER.GLOBAL.sed`
+    [ -f $SED_PREFIX.$MANUFACTURER.GLOBAL.sed ]    && OUTPUT_MAIN=`echo "$OUTPUT_MAIN"|sed -f $SED_PREFIX.$MANUFACTURER.GLOBAL.sed`
     # If present, the PASSWORD sed script will be used on ALL output and is intended to hide passwords and hashes etc.
     [ -f $SED_PREFIX.$MANUFACTURER.PASSWORD.sed ]  && OUTPUT_MAIN=`echo "$OUTPUT_MAIN"|sed -f $SED_PREFIX.$MANUFACTURER.PASSWORD.sed`
     # If present, we will envoke sed scripts for each command type specified.  This can be used to manipulate user specfic things from the output.
@@ -207,9 +203,9 @@ function process_device {
     #### Test that our output is not empty
     if [ ${#OUTPUT_MAIN} -lt 5 ]
     then
-	ONA_LOG "ERROR => $HOST: '$COMMAND' output was less than 5 characters long."
-	let EXITCNT++
-	return
+      ONA_LOG "ERROR => $HOST: '$COMMAND' output was less than 5 characters long."
+      let EXITCNT++
+      return
     fi
 
     # Check if there is a local copy at all, if not make one.
@@ -228,9 +224,9 @@ function process_device {
     # should be able to fix the handling of the config_chksum module for this case
     #if [ $? -ne 0 ]
     #then
-#	ONA_LOG "ERROR => $HOST: There was an issue retrieving the checksum from the database."
+#    ONA_LOG "ERROR => $HOST: There was an issue retrieving the checksum from the database."
 #        let EXITCNT++
-#	return
+#    return
 #    fi
 
     #### Get the checksum for the new config
@@ -241,43 +237,38 @@ function process_device {
     then
         [ -z $DEBUGON ] || ONA_LOG "DEBUG => $HOST: '$COMMAND' information has not changed."
     else
-	#### If the data has changed, then add the config to the archive, get the diff output, and email notificaitons
+        #### If the data has changed, then add the config to the archive, get the diff output, and email notificaitons
 
         # If this is a show startup (ie. IOS_CONFIG) and we want a local copy, save it now
         # OK so its mostly unchanged, I do remove trailing crap and the first byte kount usage stuff
         # Only the first one in the DEV_COMMANDs array will be stored in the local path if it is defined
-        #if [ "$CMDTYPE" == "IOS_CONFIG" -a -n "$LOCAL_COPY_PATH" ] 
         if [ $i -eq 0 -a -n "$LOCAL_COPY_PATH" ]
         then
             [ -z $DEBUGON ] || ONA_LOG "DEBUG => Saving a local copy of the $CMDTYPE config to '$LOCAL_COPY_PATH/$HOST.cfg'."
-	    echo "$CMDOUTPUT"|sed "/Using .* out of .* bytes/d; /^end/,/G/ {/^end/p;d;}" > $LOCAL_COPY_PATH/$HOST.cfg
+            echo "$CMDOUTPUT"|sed "/Using .* out of .* bytes/d; /^end/,/G/ {/^end/p;d;}" > $LOCAL_COPY_PATH/$HOST.cfg
         fi
 
         ONA_LOG "INFO => $HOST: '$COMMAND' information has changed, updating archive..."
         echo "$OUTPUT_MAIN"|$DCM_CMD -r config_add host=$HOST type=$CMDTYPE config=-
-    	if [ $? -ne 0 ]
-    	then
+        if [ $? -ne 0 ]
+        then
             ONA_LOG "ERROR => $HOST: Unable to add new config to database archive."
-	    ERRMSG="ERROR: Unable to update the archive, dumping full config output for reference.$OUTPUT_MAIN"
+            ERRMSG="ERROR: Unable to update the archive, dumping full config output for reference.$OUTPUT_MAIN"
             let EXITCNT++
-	    # I am not going to 'return' here so that I can hopefully email the info to the user
-            #return
-	else
+        else
             #### Get the DIFF text of the last to entries in the archive
             OUTPUT_DIFF=`$DCM_CMD -r config_diff host=$HOST type=$CMDTYPE`
             if [ $? -ne 0 ]
             then
-	        ONA_LOG "ERROR => $HOST: There was an issue retrieving the configuration DIFF output from the database."
-	        ERRMSG="ERROR: There was an issue retrieving the configuration DIFF output from the database.\
+                ONA_LOG "ERROR => $HOST: There was an issue retrieving the configuration DIFF output from the database."
+                ERRMSG="ERROR: There was an issue retrieving the configuration DIFF output from the database.\
 The configuration was archived however, we simply couldn't show you the DIFF output here.$ERRMSG"
                 let EXITCNT++
-	        # I am not going to 'return' here so that I can hopefully email the info to the user
-                #return
             fi
-    	fi
+        fi
 
-	#### Try to get an FQDN using the host command to help identify the host
-	FQDN=`host -W 2 $HOST|sed -e "s/\(.*\) has add.*/\1/" -e "s/.*pointer \(.*\)$/\1/"|head -1`
+        #### Try to get an FQDN using the host command to help identify the host
+        FQDN=`host -W 2 $HOST|sed -e "s/\(.*\) has add.*/\1/" -e "s/.*pointer \(.*\)$/\1/"|head -1`
 
         #### Send the email to users with the diff information
         #### NOTE: sometimes the initial import is too large to show the diff and will fail to send the email.  look into fixing this.
@@ -286,29 +277,29 @@ The configuration was archived however, we simply couldn't show you the DIFF out
                   -m "The device '$HOST' has updated its '$COMMAND' output.${ERRMSG}$OUTPUT_DIFF "
         if [ $? -ne 0 ]
         then
- 	    ONA_LOG "ERROR => $HOST: There was an issue sending the notification email."
+            ONA_LOG "ERROR => $HOST: There was an issue sending the notification email."
             let EXITCNT++
             return
         fi
     fi
   done
-}
+} ## END process_device
 
 #### Main starts here
 # Check if they have given a file or a single host
 if [ $FILEFLAG ] 
 then
-	# If they also passed a host, go ahead and process it too
-	[ $HST ] && process_device $HST
+    # If they also passed a host, go ahead and process it too
+    [ $HST ] && process_device $HST
 
-	# Process each entry in the file
-	for ENTRY in `cat $FILE`
-	do
-		process_device $ENTRY
-	done
+    # Process each entry in the file
+    for ENTRY in `cat $FILE`
+    do
+        process_device $ENTRY
+    done
 else
-	#### If they only gave a single host, process it
-	process_device $HST
+    #### If they only gave a single host, process it
+    process_device $HST
 fi
 
 exit $EXITCNT
