@@ -39,10 +39,6 @@ for FILE in $(ls ./etc)
 do
   [ -f $ONABASE/etc/$FILE ] || cp ./etc/$FILE $ONABASE/etc && chmod 644 $ONABASE/etc/$FILE
 done
-for FILE in $(ls ./sql)
-do
-  [ -f $ONABASE/sql/$FILE ] || cp ./sql/$FILE $ONABASE/sql && chmod 644 $ONABASE/sql/$FILE
-done
 
 # Create local archive directory
 [ -d $ONABASE/cfg_archive_local ] || mkdir $ONABASE/cfg_archive_local && chmod 0600 $ONABASE/cfg_archive_local
