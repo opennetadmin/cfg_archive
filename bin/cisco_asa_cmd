@@ -56,6 +56,9 @@ set SSHCMD "ssh"
 # Some devices (6500s with 2 sup cards) can take a long time to respond
 # Adjust the default timeout for expect to something larger
 set timeout 45
+# When running from cron or some terminals the terminal may not be set
+# to a desireable value. Lets force it to always be vt100
+set env(TERM) vt100
 
 
 ################# Start Program ######################
