@@ -123,7 +123,7 @@ Usage:
        OR
     -t TELNET               Connect using telnet. Cannot be used with -s
                             (default connection mode is currently: $DEFAULT_LOGINMODE)
-    -w 			    Toggles to the opposite of the default write mem setting
+    -w 			    Toggles to the opposite of the default save config setting
                             (default: $WRITEMEM) 1=yes, 0=no
     -d			    Set debug mode, prints more detail
     -v                      Enable TCL level debug logging to watch expect processes
@@ -290,7 +290,9 @@ if {$DEBUG == 1} { log_user 1 }
 
 switch $DEFAULT_LOGINMODE {
 	telnet { spawn -noecho $TELNETCMD $HOST }
-	ssh    { spawn -noecho $SSHCMD -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST }
+  # Added stupid KexAlgorithms due to bugs.. see https://bugzilla.redhat.com/show_bug.cgi?id=1026430
+  # I would love for that to go away some day.
+	ssh    { spawn -noecho $SSHCMD -o KexAlgorithms=diffie-hellman-group1-sha1 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST }
 }
 expect {
 
@@ -366,6 +368,18 @@ expect {
 	}
 }
 
+# Lets see if we are IOS or NX-OS
+send "show ver | include OS\r"
+expect {
+	"NX-OS" { 
+    set OSTYPE "NX"
+  }
+	"IOS" { 
+    set OSTYPE "IOS"
+  }
+
+}
+
 #################### Process if we are in CFG mode #####################
 if {$CFG == 1} {
     send "config term\r"
@@ -379,10 +393,16 @@ if {$CFG == 1} {
     expect -re $EPROMPT
 
 
-    # Save the configuration if -w was passed
+    # Save the configuration if -w was passed based on OS type
     if {$WRITEMEM == 1} {
+      if [string match $OSTYPE "IOS"] {
         send "wri mem\r"
         expect -re $EPROMPT
+      }
+      if [string match $OSTYPE "NX"] {
+        send "copy run start\r\r"
+        expect -re $EPROMPT
+      }
     }
 
     # Wait a few to make sure it took, then exit out
