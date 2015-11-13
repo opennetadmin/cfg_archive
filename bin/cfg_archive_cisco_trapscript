@@ -97,89 +97,92 @@ ONABASE=`cat /etc/onabase`
 CFG_DESC=( ZERO erase commandSource running startup local networkTftp networkRcp networkFtp networkScp )
 
 # Gather info from the output of the trap
-read HOST
+read DEVICE
 read IPSTRING
 
 # get rid of extra stuff in agent-addr fields like "UDP: [x.x.x.x]:23423"
-IPADDR=`echo $IPSTRING|sed -e 's/.*\[//' -e 's/\]:.*//'`
+IPADDR=`echo $IPSTRING|cut -d[ -f2|cut -d] -f1`
 
-# Reference the device using either $IPADDR or $HOST
-DEVICE=$HOST
+# Use the IPaddr if we find UNKNOWN
+if [[ $DEVICE == *UNKNOWN* ]]
+then
+  DEVICE=$IPADDR
+fi
 
 # Read each OID and its value that was in the trap
 while read OID VAL
 do
-        VAL=`echo $VAL|sed 's/= //'|sed 's/\"//g'`
+  VAL=`echo $VAL|sed 's/= //'|sed 's/\"//g'`
 
-        case "$OID" in
-                *.9.9.43.1.1.6.1.3.*)                               CMDSOURCE=$VAL;;
-                *.9.9.43.1.1.6.1.4.*)                               CFGSOURCE=$VAL;;
-                *.9.9.43.1.1.6.1.5.*)                               CFGDEST=$VAL;;
-                #SNMPv2-SMI::enterprises.9.9.43.1.1.6.1.3.*)         CMDSOURCE=$VAL;;
-                #SNMPv2-SMI::enterprises.9.9.43.1.1.6.1.4.*)         CFGSOURCE=$VAL;;
-                #SNMPv2-SMI::enterprises.9.9.43.1.1.6.1.5.*)         CFGDEST=$VAL;;
-		# These are for when you have CISCO MIBs loaded
-                ccmHistoryEventCommandSource*)   		    CMDSOURCE=$VAL;;
-                ccmHistoryEventConfigSource*)           	    CFGSOURCE=$VAL;;
-                ccmHistoryEventConfigDestination*)                  CFGDEST=$VAL;;
-                *snmpTrapOID.0)                                     SNMPTRAPOID=`echo $VAL|sed "s/.*coldStart.*/coldStart/"`;;
-        esac
+  case "$OID" in
+    *.9.9.43.1.1.6.1.3.*)                               CMDSOURCE=$VAL;;
+    *.9.9.43.1.1.6.1.4.*)                               CFGSOURCE=$VAL;;
+    *.9.9.43.1.1.6.1.5.*)                               CFGDEST=$VAL;;
+    #SNMPv2-SMI::enterprises.9.9.43.1.1.6.1.3.*)         CMDSOURCE=$VAL;;
+    #SNMPv2-SMI::enterprises.9.9.43.1.1.6.1.4.*)         CFGSOURCE=$VAL;;
+    #SNMPv2-SMI::enterprises.9.9.43.1.1.6.1.5.*)         CFGDEST=$VAL;;
+    # These are for when you have CISCO MIBs loaded
+    ccmHistoryEventCommandSource*)                      CMDSOURCE=$VAL;;
+    ccmHistoryEventConfigSource*)                       CFGSOURCE=$VAL;;
+    ccmHistoryEventConfigDestination*)                  CFGDEST=$VAL;;
+    *snmpTrapOID.0)                                     SNMPTRAPOID=`echo $VAL|sed "s/.*coldStart.*/coldStart/"`;;
+  esac
 done
 
 
 if [ ! -w "$SPOOL_DIR" -a "$USE_SPOOL" = "Y" ]
 then
-	ONA_LOG "ERROR => $DEVICE: The directory '$SPOOL_DIR' does not exist or is not writeable."
-	exit 1
+  ONA_LOG "ERROR => $DEVICE: The directory '$SPOOL_DIR' does not exist or is not writeable."
+  exit 1
 fi
 
 # If we are a coldstart (aka, the box just booted up from poweroff) then lets check its configs
 if [ "$SNMPTRAPOID" = "coldStart" ]
 then
-	if [ "$USE_SPOOL" = "Y" ]
-	then
-        	ONA_LOG "INFO => $DEVICE: Looks like the box was booted. Marking spool entry."
-		touch $SPOOL_DIR/$DEVICE
-	else
-        	ONA_LOG "INFO => $DEVICE: Looks like the box was booted. Checking for updates."
-        	eval $ARCHIVE_CMD -h $DEVICE
-	fi
+  if [ "$USE_SPOOL" = "Y" ]
+  then
+    ONA_LOG "INFO => $DEVICE: Looks like the box was booted. Marking spool entry."
+    touch $SPOOL_DIR/$DEVICE
+  else
+    ONA_LOG "INFO => $DEVICE: Looks like the box was booted. Checking for updates."
+    eval $ARCHIVE_CMD -h $DEVICE
+  fi
 fi
 
 # If we are a ccmCLIRunningConfigChanged trap
 if [ "$SNMPTRAPOID" = "SNMPv2-SMI::enterprises.9.9.43.2.0.2" ]
 then
-	if [ "$USE_SPOOL" = "Y" ]
-	then
-        	ONA_LOG "INFO => $DEVICE: ccmCLIRunningConfigChanged trap found. Marking spool entry."
-		touch $SPOOL_DIR/$DEVICE
-	else
-        	ONA_LOG "INFO => $DEVICE: ccmCLIRunningConfigChanged trap found. Checking for updates."
-        	eval $ARCHIVE_CMD -h $DEVICE
-	fi
+  if [ "$USE_SPOOL" = "Y" ]
+  then
+    ONA_LOG "INFO => $DEVICE: ccmCLIRunningConfigChanged trap found. Marking spool entry."
+    touch $SPOOL_DIR/$DEVICE
+  else
+    ONA_LOG "INFO => $DEVICE: ccmCLIRunningConfigChanged trap found. Checking for updates."
+    eval $ARCHIVE_CMD -h $DEVICE
+  fi
 fi
 
 # If the source is erase or commandSource (user went to config terminal mode) then ignore it
 if [ "$CFGSOURCE" = "commandSource" -o "$CFGSOURCE" = "2" ]
 then
-	[ -z $DEBUGON ] || ONA_LOG "DEBUG => $DEVICE: ${CFG_DESC[$CFGSOURCE]}=>${CFG_DESC[$CFGDEST]}: Skipping config trap. User most likely entered config term mode."
+  [ -z $DEBUGON ] || ONA_LOG "DEBUG => $DEVICE: ${CFG_DESC[$CFGSOURCE]}=>${CFG_DESC[$CFGDEST]}: Skipping config trap. User most likely entered config term mode."
 else
-	# If it is written to startup, then lets go check it out
-        if [ "$CFGDEST" = "startup" -o "$CFGDEST" = "4" ]
-        then
-		if [ "$USE_SPOOL" = "Y" ]
-		then
-        		ONA_LOG "INFO => $DEVICE: ${CFG_DESC[$CFGSOURCE]}=>${CFG_DESC[$CFGDEST]}: Marking spool entry."
-			touch $SPOOL_DIR/$DEVICE
-		else
-                	ONA_LOG "INFO => $DEVICE: ${CFG_DESC[$CFGSOURCE]}=>${CFG_DESC[$CFGDEST]}: Checking for updates."
-			# Artificial pause to allow the device time to finish saving its config
-			# Caution as this makes the snmptrapd process block, NOT recommended
-			#sleep 10
-                	eval $ARCHIVE_CMD -h $DEVICE
-		fi
-        else
-        	[ -z $DEBUGON ] || ONA_LOG "DEBUG => $DEVICE: ${CFG_DESC[$CFGSOURCE]}=>${CFG_DESC[$CFGDEST]}: Skipping, it was not a run to startup operation."
-        fi
+  # If it is written to startup, then lets go check it out
+  if [ "$CFGDEST" = "startup" -o "$CFGDEST" = "4" ]
+  then
+    if [ "$USE_SPOOL" = "Y" ]
+    then
+      ONA_LOG "INFO => $DEVICE: ${CFG_DESC[$CFGSOURCE]}=>${CFG_DESC[$CFGDEST]}: Marking spool entry."
+      touch $SPOOL_DIR/$DEVICE
+    else
+      ONA_LOG "INFO => $DEVICE: ${CFG_DESC[$CFGSOURCE]}=>${CFG_DESC[$CFGDEST]}: Checking for updates."
+      # Artificial pause to allow the device time to finish saving its config
+      # Caution as this makes the snmptrapd process block, NOT recommended
+      #sleep 10
+      eval $ARCHIVE_CMD -h $DEVICE
+    fi
+  else
+    [ -z $DEBUGON ] || ONA_LOG "DEBUG => $DEVICE: ${CFG_DESC[$CFGSOURCE]}=>${CFG_DESC[$CFGDEST]}: Skipping, it was not a run to startup operation."
+  fi
 fi
 
