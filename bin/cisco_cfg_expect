@@ -84,6 +84,7 @@ set ENABLE 0
 set CFG 0
 set CMD 0
 set DEBUG 0
+set OSTYPE "IOS"
 
 set PROMPT ">$|> $"
 set EPROMPT "#$|# $"
@@ -310,6 +311,10 @@ expect {
 	"ssword:" {
 		send "$PASSWORD\r"
 		expect {
+	    "NX-OS" { 
+        set OSTYPE "NX" 
+        exp_continue
+      }
 			-re $PROMPT {send "\r"}
                         -re $EPROMPT {send "\r"}
                         "ssword:" {RUN_ENABLE}
@@ -321,7 +326,7 @@ expect {
 		exit 1
 	}
 
-        # 1900 switch support
+  # 1900 switch support
 	"Selection:" {
 		send "k"
 		expect {
@@ -368,20 +373,18 @@ expect {
 	}
 }
 
-# Lets see if we are IOS or NX-OS
-send "show ver | include OS\r"
-expect {
-	"NX-OS" { 
-    set OSTYPE "NX"
-  }
-	"IOS" { 
-    set OSTYPE "IOS"
-  }
-
-}
 
 #################### Process if we are in CFG mode #####################
 if {$CFG == 1} {
+    # If we dont know what OS type we are, try and find out
+    if [string match $OSTYPE ""] {
+      send "show ver | include OS\r"
+      expect {
+	      "NX-OS" { set OSTYPE "NX" }
+	      "IOS" { set OSTYPE "IOS" }
+      }
+    }
+
     send "config term\r"
     expect -re $EPROMPT
     foreach LINE [split [exec cat $FILENAME] "\n"] {
