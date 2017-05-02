@@ -32,6 +32,8 @@ ln -s $ONABASE/bin/cisco_cfg_expect $ONABASE/bin/cisco_cmd
 ln -s $ONABASE/bin/cisco_cfg_expect $ONABASE/bin/cisco_ucs_cmd
 [ -f $ONABASE/bin/netscreen_cmd ] && rm $ONABASE/bin/netscreen_cmd
 ln -s $ONABASE/bin/juniper_cmd $ONABASE/bin/netscreen_cmd
+[ -f $ONABASE/bin/f5_cmd ] && rm $ONABASE/bin/f5_cmd
+ln -s $ONABASE/bin/cisco_cfg_expect $ONABASE/bin/f5_cmd
 
 # Move our initial configuration files into place
 # Only copy the file over it it does not already exist.
