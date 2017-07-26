@@ -293,7 +293,7 @@ switch $DEFAULT_LOGINMODE {
 	telnet { spawn -noecho $TELNETCMD $HOST }
   # Added stupid KexAlgorithms due to bugs.. see https://bugzilla.redhat.com/show_bug.cgi?id=1026430
   # I would love for that to go away some day.
-	ssh    { spawn -noecho $SSHCMD -o KexAlgorithms=diffie-hellman-group1-sha1 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST }
+	ssh    { spawn -noecho $SSHCMD -o KexAlgorithms=diffie-hellman-group14-sha1,diffie-hellman-group1-sha1 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $USER@$HOST }
 }
 expect {
 
