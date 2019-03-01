@@ -210,12 +210,12 @@ function process_device {
 
     # Check if there is a local copy at all, if not make one. This ensures we always have something local
     # If this is a show startup (ie. IOS_CONFIG) and we want a local copy, save it now
-    # OK so its mostly unchanged, I do remove trailing crap and the first byte kount usage stuff
+    # OK so its mostly unchanged, I do remove trailing crap and the first byte count usage stuff
     # Only the first one in the DEV_COMMANDs array will be stored in the local path if it is defined
     if [ $i -eq 0 -a -n "$LOCAL_COPY_PATH" -a ! -f $LOCAL_COPY_PATH/$HOST.cfg ]
     then
         [ -z $DEBUGON ] || ONA_LOG "DEBUG => Saving first local copy of the $CMDTYPE config to '$LOCAL_COPY_PATH/$HOST.cfg'."
-        echo "$CMDOUTPUT"|sed "/Using .* out of .* bytes/d; /^end/,/G/ {/^end/p;d;}" > $LOCAL_COPY_PATH/$HOST.cfg
+        echo "$CMDOUTPUT" > $LOCAL_COPY_PATH/$HOST.cfg
         chmod $LOCAL_COPY_MOD $LOCAL_COPY_PATH/$HOST.cfg
     fi
 
@@ -239,9 +239,10 @@ function process_device {
         [ -z $DEBUGON ] || ONA_LOG "DEBUG => $HOST: '$COMMAND' information has not changed."
     else
         #### If the data has changed, then add the config to the archive, get the diff output, and email notificaitons
+        ONA_LOG "INFO => $HOST: '$COMMAND' information has changed, updating archive..."
 
         # If this is a show startup (ie. IOS_CONFIG) and we want a local copy, save it now
-        # OK so its mostly unchanged, I do remove trailing crap and the first byte kount usage stuff
+        # OK so its mostly unchanged, I do remove trailing crap and the first byte count usage stuff
         # Only the first one in the DEV_COMMANDs array will be stored in the local path if it is defined
         if [ $i -eq 0 -a -n "$LOCAL_COPY_PATH" ]
         then
@@ -250,7 +251,6 @@ function process_device {
             chmod $LOCAL_COPY_MOD $LOCAL_COPY_PATH/$HOST.cfg
         fi
 
-        ONA_LOG "INFO => $HOST: '$COMMAND' information has changed, updating archive..."
         echo "$OUTPUT_MAIN"|$DCM_CMD -r config_add host=$HOST type=$CMDTYPE config=-
         if [ $? -ne 0 ]
         then
