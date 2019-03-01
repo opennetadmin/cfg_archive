@@ -8,6 +8,7 @@ type -P netcat &>/dev/null || { echo "Unable to find netcat binary. Please insta
 # cisco_cmd is not in this list as it is a special case below
 # cisco_ucs_cmd is not in this list as it is a special case below
 # netscreen_cmd is not in this list as it is a special case below
+# dell_cmd is not in this list as it is a special case below
 BINARIES=( \
   "cfg_archive" \
   "cfg_archive_procspool" \
@@ -18,6 +19,7 @@ BINARIES=( \
   "motorola_wing_cmd" \
   "juniper_cmd" \
   "extreme_networks_cmd" \
+  "fortinet_cmd" \
 )
 for BINARY in "${BINARIES[@]}"
 do
@@ -34,6 +36,8 @@ ln -s $ONABASE/bin/cisco_cfg_expect $ONABASE/bin/cisco_ucs_cmd
 ln -s $ONABASE/bin/juniper_cmd $ONABASE/bin/netscreen_cmd
 [ -f $ONABASE/bin/f5_cmd ] && rm $ONABASE/bin/f5_cmd
 ln -s $ONABASE/bin/cisco_cfg_expect $ONABASE/bin/f5_cmd
+[ -f $ONABASE/bin/dell_cmd ] && rm $ONABASE/bin/dell_cmd
+ln -s $ONABASE/bin/cisco_cfg_expect $ONABASE/bin/dell_cmd
 
 # Move our initial configuration files into place
 # Only copy the file over it it does not already exist.
