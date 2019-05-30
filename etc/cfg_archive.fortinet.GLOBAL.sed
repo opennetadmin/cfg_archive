@@ -15,9 +15,3 @@ $d
 # remove status messages from UCS 'show system firmware expand' command
 /-Status:/d
 
-# Delete from the word end to the end of the actual file, strips off extra crap
-/^end/,/G/ {
-  /^end/p;
-  d;
-}
-
