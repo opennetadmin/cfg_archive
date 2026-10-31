@@ -109,6 +109,14 @@ then
   DEVICE=$IPADDR
 fi
 
+# DEVICE comes from the trap sender (reverse DNS or IP), so only allow
+# characters valid in a hostname or IP address before using it in commands or paths
+if [[ ! $DEVICE =~ ^[A-Za-z0-9][A-Za-z0-9._:-]*$ ]]
+then
+  ONA_LOG "ERROR => Ignoring trap with invalid device name: '${DEVICE//[^[:print:]]/?}'"
+  exit 1
+fi
+
 # Read each OID and its value that was in the trap
 while read OID VAL
 do
@@ -142,10 +150,10 @@ then
   if [ "$USE_SPOOL" = "Y" ]
   then
     ONA_LOG "INFO => $DEVICE: Looks like the box was booted. Marking spool entry."
-    touch $SPOOL_DIR/$DEVICE
+    touch "$SPOOL_DIR/$DEVICE"
   else
     ONA_LOG "INFO => $DEVICE: Looks like the box was booted. Checking for updates."
-    eval $ARCHIVE_CMD -h $DEVICE
+    $ARCHIVE_CMD -h "$DEVICE"
   fi
 fi
 
@@ -155,10 +163,10 @@ then
   if [ "$USE_SPOOL" = "Y" ]
   then
     ONA_LOG "INFO => $DEVICE: ccmCLIRunningConfigChanged trap found. Marking spool entry."
-    touch $SPOOL_DIR/$DEVICE
+    touch "$SPOOL_DIR/$DEVICE"
   else
     ONA_LOG "INFO => $DEVICE: ccmCLIRunningConfigChanged trap found. Checking for updates."
-    eval $ARCHIVE_CMD -h $DEVICE
+    $ARCHIVE_CMD -h "$DEVICE"
   fi
 fi
 
@@ -173,13 +181,13 @@ else
     if [ "$USE_SPOOL" = "Y" ]
     then
       ONA_LOG "INFO => $DEVICE: ${CFG_DESC[$CFGSOURCE]}=>${CFG_DESC[$CFGDEST]}: Marking spool entry."
-      touch $SPOOL_DIR/$DEVICE
+      touch "$SPOOL_DIR/$DEVICE"
     else
       ONA_LOG "INFO => $DEVICE: ${CFG_DESC[$CFGSOURCE]}=>${CFG_DESC[$CFGDEST]}: Checking for updates."
       # Artificial pause to allow the device time to finish saving its config
       # Caution as this makes the snmptrapd process block, NOT recommended
       #sleep 10
-      eval $ARCHIVE_CMD -h $DEVICE
+      $ARCHIVE_CMD -h "$DEVICE"
     fi
   else
     [ -z $DEBUGON ] || ONA_LOG "DEBUG => $DEVICE: ${CFG_DESC[$CFGSOURCE]}=>${CFG_DESC[$CFGDEST]}: Skipping, it was not a run to startup operation."
