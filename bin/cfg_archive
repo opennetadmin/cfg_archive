@@ -133,6 +133,14 @@ function process_device {
   # Cleanup manufactuer name
   MANUFACTURER=`echo "$MANUFACTURER"|sed "s/\ /_/g"|tr [:upper:] [:lower:]`
 
+  # The manufacturer name is used in eval and file paths below, so only allow safe characters
+  if [[ ! $MANUFACTURER =~ ^[a-z0-9_]+$ ]]
+  then
+    ONA_LOG "ERROR => $HOST: Invalid manufacturer name: $MANUFACTURER"
+    let EXITCNT++
+    return
+  fi
+
   # test to see if we have a <manufacturer>_cmd script to talk to the device with
   if ! which $ONABASE/bin/${MANUFACTURER}_cmd >/dev/null
   then
